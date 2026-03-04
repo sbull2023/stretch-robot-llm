@@ -1,6 +1,6 @@
 # Stretch Robot Dual-Mode Controller & LLM Integration
 
-This is an extension of the original Stertch Robot work. This is the link to the original work: https://github.com/hello-robot/stretch_ros
+This is an extension of the original Stretch Robot work. This is the link to the original work: https://github.com/hello-robot/stretch_ros
 
 This repository contains two core Python modules designed to control the **Stretch robot** using both direct commands and advanced LLM-driven reasoning. The system supports **manual position control** as well as **autonomous navigation**, while enforcing safety, sensor awareness, and precise command execution.
 
