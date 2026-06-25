@@ -1,0 +1,11 @@
+<launch>
+  <!-- LLM-driven dual-mode controller for the Stretch RE2.
+       Assumes stretch_driver, the navigation stack, and AMCL are up. -->
+  <node pkg="stretch_trajectory_llm" type="run_controller.py"
+        name="dual_mode_stretch_controller" output="screen">
+    <env name="OLLAMA_URL"      value="$(env OLLAMA_URL)" />
+    <env name="OLLAMA_EDGE_URL" value="$(env OLLAMA_EDGE_URL)" />
+    <env name="PRIMARY_MODEL"   value="$(env PRIMARY_MODEL)" />
+    <env name="MONITOR_MODEL"   value="$(env MONITOR_MODEL)" />
+  </node>
+</launch>

@@ -1,0 +1,6 @@
+# Named navigation waypoints in the SLAM map frame.
+# Copy to waypoints.yaml and record poses for your own map:
+#   rostopic echo /amcl_pose
+kitchen:        {x: 2.41, y: -1.07, yaw: 1.57}
+charging_dock:  {x: 0.12, y:  0.04, yaw: 0.00}
+conference_table: {x: 3.85, y: 1.92, yaw: -0.78}

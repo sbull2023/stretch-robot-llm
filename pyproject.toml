@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "stretch-trajectory-llm"
+version = "1.0.0"
+description = "Trajectory fine-tuned LLM control stack for the Hello Robot Stretch RE2"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [
+  {name = "Samantha Bullard"},
+  {name = "Truong Nhut Huynh"},
+  {name = "Kim-Doang Nguyen", email = "knguyen@fit.edu"},
+]
+dependencies = [
+  "requests>=2.28",
+  "numpy>=1.21",
+  "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+robot = ["opencv-python>=4.5", "playsound==1.2.2"]
+train = ["torch>=2.1", "transformers>=4.44", "peft>=0.11", "datasets>=2.18", "accelerate>=0.30"]
+dev = ["pytest>=7.0"]
+
+[tool.setuptools.packages.find]
+include = ["stretch_llm*", "training*", "evaluation*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

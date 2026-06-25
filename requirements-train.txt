@@ -1,0 +1,6 @@
+# Fine-tuning pipeline (HPC side)
+torch>=2.1
+transformers>=4.44
+peft>=0.11
+datasets>=2.18
+accelerate>=0.30

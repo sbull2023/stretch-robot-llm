@@ -1,0 +1,21 @@
+cff-version: 1.2.0
+message: "Cite the paper below for any use of this software."
+title: "stretch-trajectory-llm"
+authors:
+  - family-names: Bullard
+    given-names: Samantha
+  - family-names: Huynh
+    given-names: Truong Nhut
+  - family-names: Nguyen
+    given-names: Kim-Doang
+preferred-citation:
+  type: article
+  title: "Trajectory Fine-Tuning of Local Language Models for Mobile Manipulation: Sub-1,000 Real Robot Sessions Match Frontier Models"
+  authors:
+    - family-names: Bullard
+      given-names: Samantha
+    - family-names: Huynh
+      given-names: Truong Nhut
+    - family-names: Nguyen
+      given-names: Kim-Doang
+  year: 2026

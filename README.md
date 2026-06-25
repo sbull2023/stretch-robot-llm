@@ -1,72 +1,142 @@
-# Stretch Robot Dual-Mode Controller & LLM Integration
+# Trajectory Fine-Tuning of Local Language Models for Mobile Manipulation
 
-This is an extension of the original Stretch Robot work. This is the link to the original work: https://github.com/hello-robot/stretch_ros
+Reference implementation for the paper *"Trajectory Fine-Tuning of Local
+Language Models for Mobile Manipulation: Sub-1,000 Real Robot Sessions Match
+Frontier Models"* (Bullard, Huynh, Nguyen — Florida Institute of Technology).
 
-This repository contains two core Python modules designed to control the **Stretch robot** using both direct commands and advanced LLM-driven reasoning. The system supports **manual position control** as well as **autonomous navigation**, while enforcing safety, sensor awareness, and precise command execution.
+The system controls a Hello Robot Stretch RE2 mobile manipulator through
+natural language with two fine-tuned open-weight LLMs and no cloud
+dependency on the reasoning path. A Llama-3.1-8B model on the AI-Panther
+HPC cluster handles instruction grounding and multi-turn tool selection; a
+Gemma-3-4B model on the robot's onboard compute handles execution
+verification, visual-servoing decisions, and command-completion checks.
+Both models are trained with **level-aware verdict-conditioned trajectory
+fine-tuning**: the unit of training is the full observe–reason–act sequence
+from real deployment logs, not a synthetic (instruction, command) pair.
 
----
+## Repository layout
 
-## 1. `stretch_ros_dual_mode_controller.py`
+```
+stretch-trajectory-llm/
+├── stretch_llm/                  Python package (deployment stack)
+│   ├── llm/                      Language-model side
+│   │   ├── grammar.py            The 47-command vocabulary C, with mode,
+│   │   │                         level, and safe-range metadata
+│   │   ├── prompts.py            Deployed system prompt (byte-for-byte)
+│   │   ├── parser.py             Regex parser, validator, range clamps
+│   │   └── client.py             Two-tier Ollama clients (HPC + edge)
+│   ├── controller/               ROS side (Noetic)
+│   │   ├── node.py               Composition root: DualModeStretchController
+│   │   ├── core.py               ROS interfaces, primitive motion
+│   │   ├── monitor.py            Tier-2 execution verification
+│   │   ├── perception.py         Camera, point cloud, SLAM map tools
+│   │   ├── behaviors.py          Level-2 visual behaviours
+│   │   ├── execution.py          Central command dispatch
+│   │   └── loop.py               Multi-turn observe–reason–act loop
+│   └── speech/                   TTS output and microphone input
+├── training/                     Fine-tuning pipeline (Section 4)
+│   ├── build_dataset.py          Curation, serialisation, token augmentation
+│   ├── finetune_lora.py          LoRA recipe (r=16, α=32, q/k/v/o)
+│   ├── verdict_inference.py      Forced-success logit-mask inference
+│   └── synthetic_baseline.py     D_syn generator for the E1 comparison
+├── evaluation/                   Metric suite and grounding eval (Section 7)
+├── scripts/                      Robot entry point, HPC jobs, SSH tunnel
+├── config/                       Model endpoints, waypoints
+├── launch/                       ROS launch file
+├── docs/                         Architecture, dataset schema, safety
+├── tests/                        ROS-free unit tests (pytest)
+└── data/                         Trajectory logs and maps (samples only)
+```
 
-### Purpose
-This file provides the **basic command interface** for controlling the Stretch robot. It allows sending robot commands through a simplified LLM-based system, validating instructions against a set of allowed commands. This module is ideal for straightforward movements and position control, such as moving the base, lifting the arm, or operating the gripper.
+## Quick start
 
-### Key Features
-- **Allowed Commands:** Supports base movements (`base_forward`, `base_back`, `base_left`, `base_right`), lift operations, wrist and gripper control, head movements, safety commands, and basic perception tools.
-- **Command Parsing:** Extracts command names from user inputs, even when numeric parameters or parentheses are used.
-- **LLM Integration:** Uses an OpenAI model to parse natural language instructions and map them into validated robot commands.
-- **Safety Fallback:** Returns a `stop` command if no valid commands are detected or if the LLM response cannot be parsed.
-- **Simplicity:** Designed for basic use and initial prototyping, making it easy to integrate with ROS topics and robot action clients.
+### 1. Robot-free development
 
-### Limitations
-- Does **not enforce strict mode separation** between manual position control and navigation.
-- Safety and sensor rules are minimal; the system may rely on LLM judgment without first checking actual sensors.
-- Numeric parameters are not strictly preserved; defaults may be used if the user input is missing values.
-- Limited support for complex navigation commands (`nav_to`, `nav_relative`) and multi-step reasoning.
+The language side has no ROS dependency, so the parser, grammar, dataset
+builder, and metric suite run on any machine:
 
----
+```bash
+git clone https://github.com/<org>/stretch-trajectory-llm
+cd stretch-trajectory-llm
+pip install -e ".[dev]"
+pytest tests/
+```
 
-## 2. `llm.py`
+### 2. Serve the Tier-1 model on the HPC
 
-### Purpose
-This file extends `stretch_ros_dual_mode_controller.py` with a **robust, safety-focused LLM interface**. It allows the Stretch robot to operate in two distinct modes — **position mode** and **navigation mode** — while strictly enforcing mode separation, safety rules, and sensor-first reasoning.
+```bash
+sbatch scripts/hpc/serve_ollama.sbatch        # on AI-Panther
+./scripts/hpc/tunnel.sh <user> <compute_node> # on the robot's NUC
+export OLLAMA_URL=http://127.0.0.1:11435
+```
 
-### Key Features
-- **Strict Mode Separation**
-  - **Position Mode (`mode_position`):** Enables manual base, lift, wrist, gripper, and head commands. Navigation commands are blocked in this mode.
-  - **Navigation Mode (`mode_nav`):** Enables relative and absolute navigation commands (`nav_relative`, `nav_to`, `nav_to_named`). Position commands are blocked in this mode.
-  - Automatic mode switching ensures that commands incompatible with the current mode are safely executed after switching.
-  
-- **Sensor-First Safety Rules**
-  - Always checks sensors before acting on safety-sensitive or distance-related queries.
-  - Uses tools like `get_camera_view`, `get_pointcloud_summary`, `get_slam_map`, and `get_object_distance` to validate commands and ensure safe operation.
-  - Prevents unsafe moves by stopping when necessary.
+### 3. Run the controller on the Stretch
 
-- **Multi-Turn Reasoning**
-  - Can query sensors, analyze results, and then decide on actions in subsequent steps.
-  - Supports instructions like “check the room” or “is it safe to move forward?” with safe sensor-first workflows.
+The robot needs ROS Noetic with `stretch_driver`, the navigation stack, and
+AMCL active, plus a local Ollama instance with the monitor model:
 
-- **Command Accuracy**
-  - Preserves numeric parameters exactly as provided by the user (e.g., distances, angles).
-  - Validates all commands against the allowed command set.
-  - Warns and filters out invalid commands.
+```bash
+ollama pull gemma3:4b
+export OLLAMA_EDGE_URL=http://127.0.0.1:11434
+python scripts/run_controller.py
+```
 
-- **Enhanced LLM Parsing**
-  - Extracts multiple commands from natural language instructions.
-  - Handles answers versus executable commands separately.
-  - Includes detailed reasoning instructions in the system prompt for precise control.
+Type an instruction, or press ENTER for voice input:
 
-### Advantages Over `stretch_ros_dual_mode_controller.py`
-- Enforces safety and sensor-first rules rigorously.
-- Supports both **position and navigation modes** with clear separation.
-- Preserves numeric values exactly as given by the user.
-- Supports multi-turn reasoning for complex instructions.
-- Handles navigation in both relative and absolute terms while preventing unsafe mixing of commands.
+```
+You > is it safe to move forward 1 meter? if yes, do it
+```
 
----
+The loop queries the Tier-1 model, executes the point-cloud safety check it
+requests, injects the observation into a follow-up prompt, and dispatches
+the verified action — the worked example of Figure 6 in the paper.
 
-## Combined Usage Overview
-- **`stretch_ros_dual_mode_controller.py`** is ideal for **simple testing, basic robot movements, and initial LLM command parsing**.
-- **`llm.py`** is designed for **full-featured deployment**, enabling safe autonomous operation, multi-step reasoning, and strict enforcement of operational modes.
+### 4. Reproduce the fine-tuning recipe
 
-Together, these modules provide a flexible foundation for controlling the Stretch robot using both natural language instructions and precise command execution, balancing **ease of use**, **safety**, and **advanced reasoning** capabilities.
+```bash
+python training/build_dataset.py \
+    --logs data/trajectories/raw_sessions.jsonl \
+    --out  data/trajectories/processed
+sbatch scripts/hpc/train_lora.sbatch
+python evaluation/run_grounding_eval.py \
+    --data data/trajectories/processed/test_ood.jsonl \
+    --model llama3.1:latest
+```
+
+## The two control variables
+
+**Level token.** Every assistant turn begins with `<|level:high|>` or
+`<|level:primitive|>`. The token turns the implicit choice between one
+high-level behaviour call (a parameterised pick, a target search) and an
+explicit primitive sequence into a learned, observable variable. Level
+prediction reaches 89.2% on the out-of-distribution split.
+
+**Verdict token.** Every assistant turn carries `<|verdict:success|>` or
+`<|verdict:failed|>` at training time, set to the trajectory's eventual
+monitor-derived outcome. At inference, a logit mask forces the success
+prefix, which elicits the model's success-conditional command distribution
+(+12 points of command validity over unconditioned generation).
+
+## Safety design
+
+Mode separation is enforced at three independent layers — the prompt rule,
+the vocabulary validator with per-command range clamps
+(`stretch_llm/llm/parser.py`), and the hardware Trigger services — so a
+mode-violation error must defeat all three to reach an actuator. A response
+with no valid command resolves to an emergency stop. See `docs/SAFETY.md`.
+
+## Citation
+
+```bibtex
+@article{huynh2026trajectory,
+  title   = {Trajectory Fine-Tuning of Local Language Models for Mobile
+             Manipulation: Sub-1,000 Real Robot Sessions Match Frontier Models},
+  author  = {Bullard, Samantha and Huynh, Truong Nhut and Nguyen, Kim-Doang},
+  journal = {Robotics and Autonomous Systems (under review)},
+  year    = {2026}
+}
+```
+
+## License
+
+MIT — see [LICENSE](LICENSE).

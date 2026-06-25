@@ -1,0 +1,19 @@
+# Two-tier LLM inference configuration.
+# Values here document the deployed setup; the code reads the matching
+# environment variables (see stretch_llm/llm/client.py).
+
+tier1_primary:
+  model: llama3.1:latest          # fine-tuned Llama-3.1-8B-Instruct
+  endpoint: http://127.0.0.1:11435  # SSH tunnel to AI-Panther A100 partition
+  role: instruction grounding, multi-turn tool selection, map reasoning,
+        natural-language answers
+
+tier2_monitor:
+  model: gemma3:4b                # fine-tuned Gemma-3-4B (multimodal)
+  endpoint: http://127.0.0.1:11434  # local edge instance on the NUC
+  role: execution verification, visual-servoing decisions,
+        command-completion checks
+
+reasoning_loop:
+  max_turns: 6        # T_max, deterministic worst-case latency bound
+  retry_on_failed_verification: 1
